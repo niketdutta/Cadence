@@ -70,10 +70,22 @@ The small button in the top-left corner of the lock screen has the lyrics settin
 
 Everything is in `Sources/Cadence/main.swift`. It builds with SwiftPM and the command line tools, no Xcode project needed.
 
+## macOS says it "could not verify" Cadence
+
+That is Gatekeeper. It shows for any app that isn't signed with a paid Apple Developer ID and notarized by Apple, and Cadence is only ad-hoc signed because it is free and open source. It does not mean anything is wrong with the app, and you can read every line of the source here.
+
+To open it anyway: click **Done**, go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Cadence. Or run once in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Cadence.app
+```
+
+You only need to do this the first time. If you'd rather not trust a downloaded build, [build it from source](#from-source); apps you build yourself aren't quarantined.
+
 ## Limitations
 
 - Uses **private, undocumented APIs**, so it may stop working on any macOS update.
-- Not sandboxed, not notarized, not for the App Store.
+- Not sandboxed, not notarized (see [the warning above](#macos-says-it-could-not-verify-cadence)), not for the App Store.
 - Lyrics and animated covers depend on third-party services and web pages; some songs won't have them.
 - Only Music and Spotify are supported (no browser or other players).
 
