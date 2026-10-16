@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+LockMusic.app/
+LockMusic.dmg
+dmg-staging/
+debug.log
+.DS_Store

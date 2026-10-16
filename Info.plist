@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>dev.niket.lockmusic</string>
+<key>CFBundleName</key><string>LockMusic</string>
+<key>CFBundleExecutable</key><string>LockMusic</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSUIElement</key><true/>
+<key>NSAppleEventsUsageDescription</key><string>LockMusic reads and controls the current track in Music and Spotify.</string>
+</dict></plist>

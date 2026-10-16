@@ -1,0 +1,89 @@
+# LockMusic
+
+A Now Playing widget for the **macOS lock screen**, with synced lyrics, animated album covers and a full-screen player.
+
+LockMusic shows what's playing in Apple Music or Spotify on your lock screen, under the clock. Tap the album art to open a full-screen view with the cover, the player, Apple Music-style scrolling lyrics, or the album's animated cover.
+
+> **Experimental.** LockMusic relies on private macOS APIs (see [How it works](#how-it-works)). It can break after a macOS update, it can't be on the Mac App Store, and you use it at your own risk.
+
+## Features
+
+- Now Playing card on the lock screen: title, artist, progress, play / pause / skip, album art
+- Clickable, draggable progress bar to seek
+- Tap the cover for a full-screen view with a soft, slowly moving blur of the album art
+- Your own lock screen clock style and font (the system's glass clock), shown on top
+- **Synced lyrics**, Apple Music style, from [LRCLIB](https://lrclib.net)
+- **Animated album covers** (Apple Music's motion artwork) as a full-screen background, for albums that have one
+- Audio output picker (speakers, Bluetooth headphones, displays, …)
+- Global shortcut **Control + Option + L** to turn the lock widget on or off
+
+## Requirements
+
+- Mac with Apple Silicon
+- macOS 26 or later
+- Apple Music or Spotify (control and metadata via AppleScript)
+- Xcode command line tools (to build from source)
+
+## Install
+
+### From a release
+
+1. Download `LockMusic.dmg` from the [Releases](../../releases) page.
+2. Drag **LockMusic** to **Applications**.
+3. The app is not notarized, so the first time: right-click it → **Open** → **Open**. (Or run `xattr -dr com.apple.quarantine /Applications/LockMusic.app`.)
+
+### From source
+
+```sh
+git clone <this repo>
+cd lockmusic
+./build.sh run        # builds LockMusic.app and opens it
+./make-dmg.sh         # optional: package LockMusic.dmg
+```
+
+## Use
+
+1. Open LockMusic. A **♪** icon appears in the menu bar.
+2. Allow the **Automation** permission prompt for Music / Spotify.
+3. Play a song, then lock your Mac (**Control + Command + Q**).
+4. Tap the small album thumbnail to go full screen. In the player card you get buttons for lyrics, the full-screen animated cover (when the album has one), and the audio output.
+
+The small button in the top-left corner of the lock screen has the lyrics settings.
+
+## How it works
+
+| Part | Technique |
+| --- | --- |
+| Drawing on the lock screen | Private **SkyLight** calls move the overlay windows into the lock screen's own Space |
+| Lock / unlock detection | `com.apple.screenIsLocked` notifications and `CGSessionCopyCurrentDictionary` |
+| Your clock style | Private **LoginUIKit** `LUI2GlassTextView`, configured from your saved lock screen font and weight |
+| Now Playing + controls | AppleScript to Music and Spotify |
+| Lyrics | [LRCLIB](https://lrclib.net) synced lyrics (no key needed) |
+| Album art | The player's own art; otherwise the iTunes Search API at higher resolution |
+| Animated covers | Read from the album's public Apple Music web page; **fragile**, breaks if Apple changes the page |
+| Audio output | CoreAudio (sets the system default output) |
+
+Everything is in `Sources/LockMusic/main.swift`. It builds with SwiftPM and the command line tools, no Xcode project needed.
+
+## Limitations
+
+- Uses **private, undocumented APIs**, so it may stop working on any macOS update.
+- Not sandboxed, not notarized, not for the App Store.
+- Lyrics and animated covers depend on third-party services and web pages; some songs won't have them.
+- Only Music and Spotify are supported (no browser or other players).
+
+## Debugging
+
+Start the app with `LM_DEBUG=1` to write a log to `~/Library/Logs/LockMusic.log` and enable the test hooks (creating `/tmp/lockmusic-preview`, `/tmp/lockmusic-expand`, `/tmp/lockmusic-full` triggers a preview / expand / full-screen toggle):
+
+```sh
+LM_DEBUG=1 ./LockMusic.app/Contents/MacOS/LockMusic
+```
+
+## Disclaimer
+
+Not affiliated with or endorsed by Apple, Spotify, or any lock screen widget app. "Apple Music", "Spotify" and "macOS" are trademarks of their owners. Album art, lyrics and animated covers belong to their respective rights holders and are fetched for personal display only.
+
+## License
+
+[MIT](LICENSE)
