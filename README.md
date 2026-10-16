@@ -27,7 +27,7 @@ Cadence shows what's playing in Apple Music or Spotify on your lock screen, unde
   <img src="docs/cover.webp" alt="Full-screen view with the cover and player" width="355">
 </p>
 
-> **Experimental.** Cadence relies on private macOS APIs (see [How it works](#how-it-works)). It can break after a macOS update, it can't be on the Mac App Store, and you use it at your own risk.
+> **Experimental.** Cadence relies on private macOS APIs (see [How it works](#how-it-works)). It can break after a macOS update, it can't be on the Mac App Store, and you use it at your own risk. If something stops working after an update, please [open an issue](https://github.com/niketdutta/Cadence/issues/new) with your macOS version and we'll fix it.
 
 ## Features
 
