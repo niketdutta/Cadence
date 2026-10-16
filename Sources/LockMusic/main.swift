@@ -291,6 +291,43 @@ func mmss(_ s: Double) -> String {
     let n = Int(max(0, s)); return String(format: "%d:%02d", n / 60, n % 60)
 }
 
+/// Title that scrolls sideways (and repeats) when it doesn't fit; sits still when it does.
+struct MarqueeText: View {
+    var text: String
+    var size: CGFloat
+    var weight: NSFont.Weight = .semibold
+    var alignment: Alignment = .leading
+
+    static func width(_ s: String, _ size: CGFloat, _ weight: NSFont.Weight) -> CGFloat {
+        ceil((s as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: weight)]).width)
+    }
+    var swiftWeight: Font.Weight { weight == .bold ? .bold : weight == .medium ? .medium : weight == .regular ? .regular : .semibold }
+
+    var body: some View {
+        GeometryReader { g in
+            let w = Self.width(text, size, weight)
+            let label = Text(text).font(.system(size: size, weight: swiftWeight)).lineLimit(1).fixedSize()
+            if w <= g.size.width {
+                label.frame(width: g.size.width, alignment: alignment)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
+                    let gap: CGFloat = 40, speed: Double = 32, pause = 1.6
+                    let cycle = Double(w + gap)
+                    let period = cycle / speed + pause
+                    let phase = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)
+                    let off = CGFloat(max(0, phase - pause) * speed)  // rests at the start, scrolls one full title length, repeats
+                    HStack(spacing: gap) { label; label }
+                        .offset(x: -off)
+                        .frame(width: g.size.width, alignment: .leading)
+                        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.06), .init(color: .black, location: 0.94), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: size + 6)
+    }
+}
+
 /// "Now playing" bars: bounce while music plays, rest flat when paused.
 struct PlayingBars: View {
     var playing: Bool
@@ -320,7 +357,7 @@ struct WidgetView: View {
             if player.expanded {
                 ZStack {
                     VStack(spacing: 1) {
-                        Text(t?.title ?? "Nothing playing").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        MarqueeText(text: t?.title ?? "Nothing playing", size: 13, weight: .semibold, alignment: .center)
                         Text(t?.artist ?? "Open Music or Spotify").font(.system(size: 12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                     }
                     .padding(.horizontal, 48)
@@ -365,7 +402,7 @@ struct WidgetView: View {
                     .buttonStyle(.plain)
                     .opacity(player.thumbHidden ? 0 : 1)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(t?.title ?? "Nothing playing").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        MarqueeText(text: t?.title ?? "Nothing playing", size: 13, weight: .semibold, alignment: .leading)
                         Text(t?.artist ?? "Open Music or Spotify").font(.system(size: 12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                     }
                     Spacer(minLength: 0)
