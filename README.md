@@ -31,7 +31,11 @@ Cadence shows what's playing in Apple Music or Spotify on your lock screen, unde
 
 1. Download `Cadence.dmg` from the [Releases](../../releases) page.
 2. Drag **Cadence** to **Applications**.
-3. The app is not notarized, so the first time: right-click it → **Open** → **Open**. (Or run `xattr -dr com.apple.quarantine /Applications/Cadence.app`.)
+3. The app is not notarized, so macOS says it "could not verify" it. Click **Done**, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Cadence. Or run this once in Terminal:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/Cadence.app
+   ```
 
 ### From source
 
