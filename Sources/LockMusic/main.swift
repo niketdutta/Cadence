@@ -20,7 +20,7 @@ struct Track: Equatable {
     @Published var track: Track?
     @Published var art: NSImage?
     @Published var softArt: NSImage?  // heavily pre-blurred copy of the cover, for the living backdrop (blurred once, then only transformed)
-    @Published var motionURL: URL? { didSet { rebuildMotion() } }  // Apple Music animated cover (HLS), when the album has one
+    @Published var motionURL: URL? { didSet { dropMotion() } }  // Apple Music animated cover (HLS), when the album has one
     private(set) var motionPlayer: AVPlayer?  // one player shared by the backdrop and the cover (decoded once)
     private var motionObservers: [NSObjectProtocol] = []
     @Published var scrub: Double?  // 0...1 while the user drags/clicks the progress bar
@@ -38,7 +38,7 @@ struct Track: Equatable {
     private let queue = DispatchQueue(label: "applescript")
 
     /// Full-screen animated cover mode: only when the user turned it on AND this album has an animated cover.
-    var fullCoverActive: Bool { Settings.shared.fullCover && motionPlayer != nil }
+    var fullCoverActive: Bool { Settings.shared.fullCover && motionURL != nil }
 
     func livePosition(_ now: Date) -> Double {
         guard let t = track else { return 0 }
@@ -52,11 +52,18 @@ struct Track: Equatable {
         return lyrics[i].text.isEmpty ? "♪" : lyrics[i].text
     }
 
-    private func rebuildMotion() {
+    /// Frees the video player (decoder + buffers). The URL stays, so it can be rebuilt on demand.
+    func dropMotion() {
+        guard motionPlayer != nil || !motionObservers.isEmpty else { return }
         motionPlayer?.pause()
         motionObservers.forEach(NotificationCenter.default.removeObserver); motionObservers = []
         motionPlayer = nil
-        guard let u = motionURL else { return }
+        objectWillChange.send()
+    }
+
+    /// Builds the video player only when the full-screen cover is actually shown.
+    func ensureMotion() {
+        guard motionPlayer == nil, let u = motionURL else { return }
         // Manual loop: AVPlayerLooper stops after one pass on HLS streams.
         let item = AVPlayerItem(url: u)
         let p = AVPlayer(playerItem: item)
@@ -69,13 +76,20 @@ struct Track: Equatable {
             nc.addObserver(forName: .AVPlayerItemPlaybackStalled, object: item, queue: .main) { [weak p] _ in dlog("motion stalled"); p?.play() },
         ]
         motionPlayer = p
+        objectWillChange.send()
     }
 
-    func start() {
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+    private var pollTimer: Timer?
+    /// Music/Spotify are only queried while the widget is on screen (nothing runs when the Mac is unlocked).
+    func setPolling(_ on: Bool) {
+        if on, pollTimer == nil {
+            let t = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in Task { @MainActor in self?.poll() } }
+            t.tolerance = 0.2
+            pollTimer = t
+            poll()
+        } else if !on, let t = pollTimer {
+            t.invalidate(); pollTimer = nil
         }
-        poll()
     }
 
     func poll() {
@@ -131,9 +145,15 @@ struct Track: Equatable {
     }
 
     // MARK: AppleScript (off main thread)
-    nonisolated static func run(_ src: String) -> NSAppleEventDescriptor? {
+    /// Compiled scripts for the repeated read queries (compiling every second was a large share of the CPU). The AppleScript
+    /// queue is serial, so this dictionary is only ever touched from one thread.
+    nonisolated(unsafe) static var scriptCache: [String: NSAppleScript] = [:]
+    nonisolated static func run(_ src: String, cached: Bool = false) -> NSAppleEventDescriptor? {
         var err: NSDictionary?
-        return NSAppleScript(source: src)?.executeAndReturnError(&err)
+        let script: NSAppleScript?
+        if cached { script = scriptCache[src] ?? NSAppleScript(source: src); if let script { scriptCache[src] = script } }
+        else { script = NSAppleScript(source: src) }
+        return script?.executeAndReturnError(&err)
     }
 
     nonisolated static func running(_ id: String) -> Bool {
@@ -148,7 +168,7 @@ struct Track: Equatable {
               set t to current track
               return {player state as text, name of t, artist of t, player position, duration of t, album of t}
             end tell
-            """), d.numberOfItems >= 5 {
+            """, cached: true), d.numberOfItems >= 5 {
             found = Track(app: "Music", title: d.atIndex(2)?.stringValue ?? "", artist: d.atIndex(3)?.stringValue ?? "", album: d.atIndex(6)?.stringValue ?? "",
                           playing: d.atIndex(1)?.stringValue == "playing",
                           position: d.atIndex(4)?.doubleValue ?? 0, duration: d.atIndex(5)?.doubleValue ?? 0)
@@ -159,13 +179,25 @@ struct Track: Equatable {
               set t to current track
               return {player state as text, name of t, artist of t, player position, (duration of t) / 1000, album of t}
             end tell
-            """), d.numberOfItems >= 5 {
+            """, cached: true), d.numberOfItems >= 5 {
             let s = Track(app: "Spotify", title: d.atIndex(2)?.stringValue ?? "", artist: d.atIndex(3)?.stringValue ?? "", album: d.atIndex(6)?.stringValue ?? "",
                           playing: d.atIndex(1)?.stringValue == "playing",
                           position: d.atIndex(4)?.doubleValue ?? 0, duration: d.atIndex(5)?.doubleValue ?? 0)
             if found == nil || s.playing { found = s }
         }
         return found
+    }
+
+    nonisolated static func downscaled(_ img: NSImage, maxPx: Int) -> NSImage {
+        guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil), max(cg.width, cg.height) > maxPx else { return img }
+        let k = Double(maxPx) / Double(max(cg.width, cg.height))
+        let w = Int(Double(cg.width) * k), h = Int(Double(cg.height) * k)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return img }
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let out = ctx.makeImage() else { return img }
+        return NSImage(cgImage: out, size: NSSize(width: w, height: h))
     }
 
     nonisolated static func px(_ i: NSImage) -> Int { i.representations.map(\.pixelsWide).max() ?? Int(i.size.width) }
@@ -184,7 +216,7 @@ struct Track: Equatable {
             }
         }
         if best == nil || px(best!) < 1000, let hd = itunesArt(t), px(hd) > (best.map(px) ?? 0) { best = hd }
-        return best
+        return best.map { downscaled($0, maxPx: 900) }  // the biggest it is ever drawn is ~800px; a 1500px bitmap is ~9 MB
     }
 
     nonisolated static func get(_ url: URL) -> Data? {
@@ -332,7 +364,7 @@ struct MarqueeText: View {
 struct PlayingBars: View {
     var playing: Bool
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !playing)) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 12, paused: !playing)) { ctx in  // 12fps is plenty for 4 tiny bars
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(alignment: .center, spacing: 2) {
                 ForEach(0..<4, id: \.self) { i in
@@ -543,8 +575,9 @@ enum SystemClock {
         let pipe = Pipe()
         p.standardOutput = pipe
         guard (try? p.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()  // blocks without running the run loop
         p.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let out = String(data: data, encoding: .utf8) ?? ""
         return out.split(separator: " ").last.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
     }()
     static var isAvailable: Bool {
@@ -928,7 +961,7 @@ struct BackdropView: View {
             if let art = player.art {
                 let side = g.size.height * 0.40, s = 50 / side
                 let r = player.revealed
-                let full = settings.fullCover && player.motionPlayer != nil  // full-screen animated cover mode
+                let full = settings.fullCover && player.motionURL != nil  // full-screen animated cover mode
                 let sb = !full && player.expanded && player.lyricsOpen && settings.lyrics && settings.lyricStyle == .full && !player.lyrics.isEmpty  // side-by-side
                 ZStack {
                     ZStack {
@@ -1056,11 +1089,18 @@ enum SkyLight {
     static var dumped = false
 
     /// Newest type-3 Space: created fresh at each lock (id 149, 151, ...), assumed to be the lock screen. Not listed by the managed-display call.
+    static var typeCache: [UInt64: Int32] = [:]  // a Space's type never changes, so ask the window server once per Space
     static func systemSpace(_ cid: Int32) -> UInt64? {
         guard let spaceType, let all = copySpaces?(cid, 0xFFFF)?.takeRetainedValue() as? [NSNumber] else { return nil }
-        let typed = all.map { ($0.uint64Value, spaceType(cid, $0.uint64Value)) }
-        if !dumped { dumped = true; dlog("all spaces (id,type): \(typed)") }
-        return typed.filter { $0.1 == 3 }.map { $0.0 }.max()
+        let live = Set(all.map { $0.uint64Value })
+        typeCache = typeCache.filter { live.contains($0.key) }  // forget Spaces that no longer exist
+        var newest: UInt64?
+        for n in all {
+            let id = n.uint64Value
+            let t = typeCache[id] ?? { let v = spaceType(cid, id); typeCache[id] = v; return v }()
+            if t == 3, id > (newest ?? 0) { newest = id }
+        }
+        return newest
     }
 
     /// Current Space of the main display; while locked this is the lock screen's Space.
@@ -1145,6 +1185,7 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
     var laidOutSide = false
     var cardOrigin = NSPoint.zero
     var cancellables = Set<AnyCancellable>()
+    var lockReady = false
     var lyricsShown = false
     var previewing = false
     var lastWant = false
@@ -1155,18 +1196,16 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
 
     func applicationDidFinishLaunching(_ n: Notification) {
         // Layout reacts the instant a toggle changes (the SwiftUI cover already does), not on the next 0.15s tick.
-        Publishers.Merge3(player.$lyricsOpen.map { _ in () }, player.$expanded.map { _ in () }, player.$lyrics.map { _ in () })
+        Publishers.Merge3(player.$lyricsOpen.removeDuplicates().map { _ in () }, player.$expanded.removeDuplicates().map { _ in () },
+                          player.$lyrics.map { $0.count }.removeDuplicates().map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in MainActor.assumeIsolated { self?.tick() } }
             .store(in: &cancellables)
-        _ = SystemClock.loaded; _ = SystemClock.guid  // resolve now: waiting on dscl inside a SwiftUI update aborts the app
-        player.start()
         dlog("launch")
-        ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "lock widget")
         for (name, v) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
             DistributedNotificationCenter.default().addObserver(forName: .init(name), object: nil, queue: .main) { [weak self] _ in
                 dlog("notification \(name)")
-                MainActor.assumeIsolated { self?.notified = v; self?.tick() }
+                MainActor.assumeIsolated { self?.notified = v; self?.lockedCache = v; self?.lockedAt = Date(); self?.tick() }
             }
         }
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -1182,9 +1221,30 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
         installHotKey(keyCode: kVK_ANSI_L, modifiers: controlKey | optionKey) { [weak self] in
             MainActor.assumeIsolated { self?.toggleEnabled() }
         }
-        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
+        baseline = SkyLight.newestLockSpace() ?? 0
+        scheduleTick(2.0)
+    }
+
+    // Idle: wake every 2s (safety net only; lock/unlock arrive as notifications). Visible: 0.15s for animation.
+    var tickTimer: Timer?
+    var tickInterval = 0.0
+    func scheduleTick(_ i: TimeInterval) {
+        guard i != tickInterval else { return }
+        tickInterval = i
+        tickTimer?.invalidate()
+        let t = Timer(timeInterval: i, repeats: true) { [weak self] _ in Task { @MainActor in self?.tick() } }
+        t.tolerance = i * 0.3  // lets macOS batch our wakeups with others
+        RunLoop.main.add(t, forMode: .common)
+        tickTimer = t
+    }
+
+    /// The lock state costs a window-server round trip, so it is cached; notifications refresh the cache instantly.
+    var lockedCache = false
+    var lockedAt = Date.distantPast
+    func lockedNow() -> Bool {
+        if Date().timeIntervalSince(lockedAt) < 1 { return lockedCache }
+        lockedAt = Date(); lockedCache = locked()
+        return lockedCache
     }
 
     func locked() -> Bool {
@@ -1203,22 +1263,24 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
         if debugOn, FileManager.default.fileExists(atPath: "/tmp/lockmusic-full") {  // dev hook: touch the file to toggle full-screen cover
             try? FileManager.default.removeItem(atPath: "/tmp/lockmusic-full"); Settings.shared.fullCover.toggle()
         }
-        let stateNow = "expanded=\(player.expanded) lyricsOpen=\(player.lyricsOpen) full=\(Settings.shared.fullCover) motion=\(player.motionPlayer != nil) side=\(sideBySide) artShown=\(artShown) revealed=\(player.revealed)"
-        if stateNow != lastState { lastState = stateNow; dlog("state: " + stateNow) }
-        let isLocked = locked() || notified
+        if debugOn {
+            let stateNow = "expanded=\(player.expanded) lyricsOpen=\(player.lyricsOpen) full=\(Settings.shared.fullCover) motion=\(player.motionPlayer != nil) side=\(sideBySide) artShown=\(artShown) revealed=\(player.revealed)"
+            if stateNow != lastState { lastState = stateNow; dlog("state: " + stateNow) }
+        }
+        let isLocked = notified || lockedNow()
         let want = (enabled && isLocked) || previewing
         if want != lastWant { lastWant = want; dlog("want=\(want) locked=\(isLocked)") }
+        player.setPolling(want)  // Music / Spotify are only queried while the widget is on screen
         if !isLocked {
-            lockedSince = nil
-            baseline = SkyLight.newestLockSpace() ?? baseline
+            lockedSince = nil; lockReady = false
+            if panel == nil { baseline = SkyLight.newestLockSpace() ?? baseline }  // cheap now: Space types are cached
         } else if lockedSince == nil { lockedSince = Date() }
         // Wait for the fresh lock-screen Space (newer than the one seen while unlocked) so we don't beat the lock screen.
-        let ready = !isLocked || previewing
-            || (SkyLight.newestLockSpace() ?? 0) > baseline
-            || Date().timeIntervalSince(lockedSince ?? Date()) > 1.5
+        if isLocked, !lockReady, (SkyLight.newestLockSpace() ?? 0) > baseline || Date().timeIntervalSince(lockedSince ?? Date()) > 1.5 { lockReady = true }
+        let ready = !isLocked || previewing || lockReady
         if want && ready && panel?.isVisible != true { show() }
         else if want && ready, let w = panel, let s = statusPanel { layoutSettings(); _ = SkyLight.lift(w); _ = SkyLight.lift(s); if let g = settingsPanel { _ = SkyLight.lift(g) }; if let l = lyricsPanel { _ = SkyLight.lift(l) } }
-        if !want && panel?.isVisible == true { hide(); SkyLight.dumped = false }
+        if !want && panel != nil { hide() }
         if panel != nil, Settings.shared.lyricStyle != laidOutStyle || sideBySide != laidOutSide { applyLayout(animated: true) }
         let showLyrics = Settings.shared.lyrics && !player.lyrics.isEmpty && player.expanded && !player.fullCoverActive && player.lyricsOpen && want && ready
         if showLyrics != lyricsShown {
@@ -1235,11 +1297,14 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
             }
         }
         updateArt(visible: want && ready)
-        if beat % 14 == 0 { OutputModel.shared.refresh() }  // keeps the button icon in step with the current output
+        if want, beat % 14 == 0 { OutputModel.shared.refresh() }  // keeps the button icon in step with the current output
         updateOutputPanel(show: OutputModel.shared.open && want && ready)
         // Watchdog: if the animated cover ever stalls or pauses while shown, resume it.
         if player.revealed, let mp = player.motionPlayer, mp.timeControlStatus == .paused { mp.play() }
-        if player.fullCoverActive, artShown, beat % 14 == 0, let mp = player.motionPlayer {
+        // The video player only exists while the full-screen animated cover is actually on screen.
+        if artShown, Settings.shared.fullCover, player.motionURL != nil { player.ensureMotion() } else if !artShown { player.dropMotion() }
+        scheduleTick(want || panel != nil ? 0.15 : 2.0)
+        if debugOn, player.fullCoverActive, artShown, beat % 14 == 0, let mp = player.motionPlayer {
             let it = mp.currentItem
             dlog("full-cover video: control=\(mp.timeControlStatus.rawValue) rate=\(mp.rate) item=\(it?.status.rawValue ?? -1) err=\(String(describing: it?.error)) size=\(String(describing: it?.presentationSize)) revealed=\(player.revealed)")
         }
@@ -1264,7 +1329,7 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
             artShown = false
             if visible { dismissArt() } else { backdrop?.orderOut(nil); clockPanel?.orderOut(nil); player.revealed = false; player.thumbHidden = false }
         }
-        if !visible { player.expanded = false }
+        if !visible, player.expanded { player.expanded = false }  // only on a real change: every write notifies, which re-ran tick() forever
     }
 
     func presentArt(_ f: NSRect) {
@@ -1358,6 +1423,7 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
 
     func show() {
         guard let f = NSScreen.main?.frame else { return }
+        _ = SystemClock.isAvailable  // first use loads LoginUIKit + resolves the user GUID (must not happen inside a SwiftUI update)
         let w = panel ?? make(WidgetView(player: player), size: NSSize(width: 290, height: 150))
         let s = statusPanel ?? make(StatusRow(), size: NSSize(width: 200, height: 30))
         panel = w; statusPanel = s
@@ -1450,7 +1516,20 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
         laidOutExpanded = e
     }
 
-    func hide() { OutputModel.shared.open = false; outputPanel?.orderOut(nil); lyricsPanel?.orderOut(nil); Settings.shared.open = false; settingsPanel?.orderOut(nil); panel?.orderOut(nil); statusPanel?.orderOut(nil); backdrop?.orderOut(nil); clockPanel?.orderOut(nil); artShown = false; player.revealed = false; player.thumbHidden = false }
+    /// Unlocked: tear the whole overlay down (windows, SwiftUI views, video decoder). Rebuilt on the next lock.
+    func hide() {
+        OutputModel.shared.open = false
+        Settings.shared.open = false
+        for p in [outputPanel, lyricsPanel, settingsPanel, panel, statusPanel, backdrop, clockPanel] { p?.orderOut(nil); p?.contentView = nil }
+        outputPanel = nil; lyricsPanel = nil; settingsPanel = nil; panel = nil; statusPanel = nil; backdrop = nil; clockPanel = nil
+        clockReady = false; lyricsShown = false; artShown = false; laidOutExpanded = false; laidOutSide = false
+        if player.revealed { player.revealed = false }
+        if player.thumbHidden { player.thumbHidden = false }
+        if player.expanded { player.expanded = false }
+        player.dropMotion()
+        // hand the freed pages back to the system a moment later (the windows and video buffers were large)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { _ = malloc_zone_pressure_relief(nil, 0) }
+    }
 }
 
 MainActor.assumeIsolated {
