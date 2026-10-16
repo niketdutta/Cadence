@@ -4,6 +4,12 @@ A Now Playing widget for the **macOS lock screen**, with synced lyrics, animated
 
 Cadence shows what's playing in Apple Music or Spotify on your lock screen, under the clock. Tap the album art to open a full-screen view with the cover, the player, Apple Music-style scrolling lyrics, or the album's animated cover.
 
+<p align="center"><img src="docs/widget.webp" alt="Cadence player card under the lock screen clock" width="720"></p>
+<p align="center">
+  <img src="docs/lyrics.webp" alt="Full-screen view with the cover, player and synced lyrics" width="355">
+  <img src="docs/cover.webp" alt="Full-screen view with the cover and player" width="355">
+</p>
+
 > **Experimental.** Cadence relies on private macOS APIs (see [How it works](#how-it-works)). It can break after a macOS update, it can't be on the Mac App Store, and you use it at your own risk.
 
 ## Features
