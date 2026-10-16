@@ -1,6 +1,23 @@
-# Cadence
+<h1 align="center">
+  <br>
+  <a href="https://github.com/niketdutta/Cadence"><img src="docs/icon.png" alt="Cadence" width="150"></a>
+  <br>
+  Cadence
+  <br>
+</h1>
 
-A Now Playing widget for the **macOS lock screen**, with synced lyrics, animated album covers and a full-screen player.
+<p align="center">
+  <a href="https://github.com/niketdutta/Cadence/releases/latest"><img src="https://img.shields.io/github/v/release/niketdutta/Cadence?style=flat&color=8a3ffc" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-26%2B-black?style=flat&logo=apple&logoColor=white" alt="macOS 26+">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-555?style=flat" alt="Apple Silicon">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/niketdutta/Cadence?style=flat" alt="MIT license"></a>
+  <a href="https://github.com/niketdutta/Cadence/stargazers"><img src="https://img.shields.io/github/stars/niketdutta/Cadence?style=flat" alt="Stars"></a>
+</p>
+
+<p align="center">
+  Say hello to <b>Cadence</b>, a Now Playing widget for the <b>macOS lock screen</b>.<br>
+  Synced lyrics, animated album covers and a full-screen player, right under your lock screen clock.
+</p>
 
 Cadence shows what's playing in Apple Music or Spotify on your lock screen, under the clock. Tap the album art to open a full-screen view with the cover, the player, Apple Music-style scrolling lyrics, or the album's animated cover.
 
