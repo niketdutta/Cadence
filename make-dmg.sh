@@ -1,12 +1,12 @@
 #!/bin/sh
-# builds LockMusic.app, then packages it as LockMusic.dmg (drag-to-Applications layout)
+# builds Cadence.app, then packages it as Cadence.dmg (drag-to-Applications layout)
 set -e
 cd "$(dirname "$0")"
 ./build.sh
-rm -rf dmg-staging LockMusic.dmg
+rm -rf dmg-staging Cadence.dmg
 mkdir dmg-staging
-cp -R LockMusic.app dmg-staging/
+cp -R Cadence.app dmg-staging/
 ln -s /Applications dmg-staging/Applications
-hdiutil create -volname "LockMusic" -srcfolder dmg-staging -ov -format UDZO LockMusic.dmg
+hdiutil create -volname "Cadence" -srcfolder dmg-staging -ov -format UDZO Cadence.dmg
 rm -rf dmg-staging
-echo "created $(pwd)/LockMusic.dmg"
+echo "created $(pwd)/Cadence.dmg"

@@ -1,10 +1,10 @@
-# LockMusic
+# Cadence
 
 A Now Playing widget for the **macOS lock screen**, with synced lyrics, animated album covers and a full-screen player.
 
-LockMusic shows what's playing in Apple Music or Spotify on your lock screen, under the clock. Tap the album art to open a full-screen view with the cover, the player, Apple Music-style scrolling lyrics, or the album's animated cover.
+Cadence shows what's playing in Apple Music or Spotify on your lock screen, under the clock. Tap the album art to open a full-screen view with the cover, the player, Apple Music-style scrolling lyrics, or the album's animated cover.
 
-> **Experimental.** LockMusic relies on private macOS APIs (see [How it works](#how-it-works)). It can break after a macOS update, it can't be on the Mac App Store, and you use it at your own risk.
+> **Experimental.** Cadence relies on private macOS APIs (see [How it works](#how-it-works)). It can break after a macOS update, it can't be on the Mac App Store, and you use it at your own risk.
 
 ## Features
 
@@ -28,22 +28,22 @@ LockMusic shows what's playing in Apple Music or Spotify on your lock screen, un
 
 ### From a release
 
-1. Download `LockMusic.dmg` from the [Releases](../../releases) page.
-2. Drag **LockMusic** to **Applications**.
-3. The app is not notarized, so the first time: right-click it → **Open** → **Open**. (Or run `xattr -dr com.apple.quarantine /Applications/LockMusic.app`.)
+1. Download `Cadence.dmg` from the [Releases](../../releases) page.
+2. Drag **Cadence** to **Applications**.
+3. The app is not notarized, so the first time: right-click it → **Open** → **Open**. (Or run `xattr -dr com.apple.quarantine /Applications/Cadence.app`.)
 
 ### From source
 
 ```sh
 git clone <this repo>
-cd lockmusic
-./build.sh run        # builds LockMusic.app and opens it
-./make-dmg.sh         # optional: package LockMusic.dmg
+cd cadence
+./build.sh run        # builds Cadence.app and opens it
+./make-dmg.sh         # optional: package Cadence.dmg
 ```
 
 ## Use
 
-1. Open LockMusic. A **♪** icon appears in the menu bar.
+1. Open Cadence. A **♪** icon appears in the menu bar.
 2. Allow the **Automation** permission prompt for Music / Spotify.
 3. Play a song, then lock your Mac (**Control + Command + Q**).
 4. Tap the small album thumbnail to go full screen. In the player card you get buttons for lyrics, the full-screen animated cover (when the album has one), and the audio output.
@@ -63,7 +63,7 @@ The small button in the top-left corner of the lock screen has the lyrics settin
 | Animated covers | Read from the album's public Apple Music web page; **fragile**, breaks if Apple changes the page |
 | Audio output | CoreAudio (sets the system default output) |
 
-Everything is in `Sources/LockMusic/main.swift`. It builds with SwiftPM and the command line tools, no Xcode project needed.
+Everything is in `Sources/Cadence/main.swift`. It builds with SwiftPM and the command line tools, no Xcode project needed.
 
 ## Limitations
 
@@ -74,10 +74,10 @@ Everything is in `Sources/LockMusic/main.swift`. It builds with SwiftPM and the 
 
 ## Debugging
 
-Start the app with `LM_DEBUG=1` to write a log to `~/Library/Logs/LockMusic.log` and enable the test hooks (creating `/tmp/lockmusic-preview`, `/tmp/lockmusic-expand`, `/tmp/lockmusic-full` triggers a preview / expand / full-screen toggle):
+Start the app with `CADENCE_DEBUG=1` to write a log to `~/Library/Logs/Cadence.log` and enable the test hooks (creating `/tmp/cadence-preview`, `/tmp/cadence-expand`, `/tmp/cadence-full` triggers a preview / expand / full-screen toggle):
 
 ```sh
-LM_DEBUG=1 ./LockMusic.app/Contents/MacOS/LockMusic
+CADENCE_DEBUG=1 ./Cadence.app/Contents/MacOS/Cadence
 ```
 
 ## Disclaimer

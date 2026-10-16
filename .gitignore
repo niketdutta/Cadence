@@ -7,7 +7,7 @@ DerivedData/
 *.dSYM/
 
 # --- Packaged app and installers (publish these as GitHub Release assets, not in git) ---
-LockMusic.app/
+Cadence.app/
 dmg-staging/
 *.dmg
 *.pkg

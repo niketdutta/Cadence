@@ -1059,13 +1059,13 @@ struct StatusRow: View {
 }
 
 /// Private SkyLight: a Space at a huge absolute level renders above the lock screen.
-/// Debug logging and test hooks are off unless the app is started with LM_DEBUG=1 (log: ~/Library/Logs/LockMusic.log).
-let debugOn = ProcessInfo.processInfo.environment["LM_DEBUG"] != nil
+/// Debug logging and test hooks are off unless the app is started with CADENCE_DEBUG=1 (log: ~/Library/Logs/Cadence.log).
+let debugOn = ProcessInfo.processInfo.environment["CADENCE_DEBUG"] != nil
 
 func dlog(_ m: String) {
     guard debugOn else { return }
     let line = "\(Date()) \(m)\n"
-    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/LockMusic.log")
+    let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Cadence.log")
     if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
     else { try? line.write(to: url, atomically: true, encoding: .utf8) }
 }
@@ -1209,7 +1209,7 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
             }
         }
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "LockMusic")
+        item.button?.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Cadence")
         let menu = NSMenu()
         toggleItem = menu.addItem(withTitle: "", action: #selector(toggleEnabled), keyEquivalent: "")
         toggleItem.target = self
@@ -1254,14 +1254,14 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
     // Failsafe: the panel exists only while locked (or during a timed preview).
     func tick() {
         beat += 1
-                if debugOn, FileManager.default.fileExists(atPath: "/tmp/lockmusic-preview") {  // dev hook: touch the file to preview
-            try? FileManager.default.removeItem(atPath: "/tmp/lockmusic-preview"); preview()
+                if debugOn, FileManager.default.fileExists(atPath: "/tmp/cadence-preview") {  // dev hook: touch the file to preview
+            try? FileManager.default.removeItem(atPath: "/tmp/cadence-preview"); preview()
         }
-        if debugOn, FileManager.default.fileExists(atPath: "/tmp/lockmusic-expand") {  // dev hook: touch the file to expand the cover
-            try? FileManager.default.removeItem(atPath: "/tmp/lockmusic-expand"); player.expanded.toggle()
+        if debugOn, FileManager.default.fileExists(atPath: "/tmp/cadence-expand") {  // dev hook: touch the file to expand the cover
+            try? FileManager.default.removeItem(atPath: "/tmp/cadence-expand"); player.expanded.toggle()
         }
-        if debugOn, FileManager.default.fileExists(atPath: "/tmp/lockmusic-full") {  // dev hook: touch the file to toggle full-screen cover
-            try? FileManager.default.removeItem(atPath: "/tmp/lockmusic-full"); Settings.shared.fullCover.toggle()
+        if debugOn, FileManager.default.fileExists(atPath: "/tmp/cadence-full") {  // dev hook: touch the file to toggle full-screen cover
+            try? FileManager.default.removeItem(atPath: "/tmp/cadence-full"); Settings.shared.fullCover.toggle()
         }
         if debugOn {
             let stateNow = "expanded=\(player.expanded) lyricsOpen=\(player.lyricsOpen) full=\(Settings.shared.fullCover) motion=\(player.motionPlayer != nil) side=\(sideBySide) artShown=\(artShown) revealed=\(player.revealed)"
@@ -1441,7 +1441,7 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
         applyLayout()
         for p in [w, s] {
             p.orderFrontRegardless()
-            if !SkyLight.lift(p) { NSLog("LockMusic: SkyLight symbols missing, using normal window level") }
+            if !SkyLight.lift(p) { NSLog("Cadence: SkyLight symbols missing, using normal window level") }
         }
         panel = w; statusPanel = s
     }
