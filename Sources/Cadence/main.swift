@@ -6,6 +6,7 @@ import CoreImage
 import CoreAudio
 import Combine
 import Carbon.HIToolbox
+import ServiceManagement
 
 struct LyricLine { var t: Double; var text: String }
 
@@ -79,7 +80,7 @@ struct Track: Equatable {
         objectWillChange.send()
     }
 
-    private var pollTimer: Timer?
+    var pollTimer: Timer?
     /// Music/Spotify are only queried while the widget is on screen (nothing runs when the Mac is unlocked).
     func setPolling(_ on: Bool) {
         if on, pollTimer == nil {
@@ -1162,7 +1163,7 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
                         GetApplicationEventTarget(), 0, &ref)
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let player = Player()
     var item: NSStatusItem!
     var panel: Panel?
@@ -1211,11 +1212,7 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Cadence")
         let menu = NSMenu()
-        toggleItem = menu.addItem(withTitle: "", action: #selector(toggleEnabled), keyEquivalent: "")
-        toggleItem.target = self
-        menu.addItem(withTitle: "Preview Lock Widget (8s)", action: #selector(preview), keyEquivalent: "l").target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.delegate = self  // rebuilt each time it opens, so it shows the current song / output
         item.menu = menu
         refreshToggle()
         installHotKey(keyCode: kVK_ANSI_L, modifiers: controlKey | optionKey) { [weak self] in
@@ -1393,6 +1390,66 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
         }
     }
 
+
+    // MARK: Menu bar menu
+    nonisolated func menuNeedsUpdate(_ menu: NSMenu) { MainActor.assumeIsolated { rebuild(menu) } }
+
+    func rebuild(_ menu: NSMenu) {
+        menu.removeAllItems()
+        func add(_ title: String, _ sel: Selector?, key: String = "", on: Bool = false, enabled: Bool = true) -> NSMenuItem {
+            let i = menu.addItem(withTitle: title, action: enabled ? sel : nil, keyEquivalent: key)
+            i.target = self; i.state = on ? .on : .off
+            return i
+        }
+        // Now playing (the lock widget only polls while visible, so read once here)
+        if player.pollTimer == nil { player.track = Player.read() }
+        if let t = player.track {
+            _ = add(t.title, nil, enabled: false).attributedTitle = NSAttributedString(string: t.title, attributes: [.font: NSFont.boldSystemFont(ofSize: 13)])
+            _ = add("\(t.artist)\(t.album.isEmpty ? "" : " — \(t.album)")", nil, enabled: false)
+            menu.addItem(.separator())
+            _ = add("Previous", #selector(prevTrack))
+            _ = add(t.playing ? "Pause" : "Play", #selector(playPause))
+            _ = add("Next", #selector(nextTrack))
+        } else {
+            _ = add("Nothing playing", nil, enabled: false)
+        }
+        menu.addItem(.separator())
+
+        let out = OutputModel.shared; out.refresh()
+        let sub = NSMenu()
+        for d in out.devices {
+            let i = sub.addItem(withTitle: d.name, action: #selector(pickOutput(_:)), keyEquivalent: "")
+            i.target = self; i.tag = Int(d.id); i.state = d.isDefault ? .on : .off
+            i.image = NSImage(systemSymbolName: d.symbol, accessibilityDescription: nil)
+        }
+        menu.addItem(withTitle: "Audio Output", action: nil, keyEquivalent: "").submenu = sub
+        menu.addItem(.separator())
+
+        toggleItem = add("Lock Widget: \(enabled ? "On" : "Off")   (^⌥L)", #selector(toggleEnabled), on: enabled)
+        _ = add("Live Lyrics", #selector(toggleLyrics), on: Settings.shared.lyrics)
+        _ = add("Preview Lock Widget (8s)", #selector(preview), key: "l")
+        menu.addItem(.separator())
+        _ = add("Open Music", #selector(openPlayer(_:))).representedObject = "com.apple.Music"
+        _ = add("Open Spotify", #selector(openPlayer(_:))).representedObject = "com.spotify.client"
+        menu.addItem(.separator())
+        _ = add("Launch at Login", #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled)
+        menu.addItem(withTitle: "Quit Cadence", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    }
+
+    @objc func prevTrack() { player.send("previous track") }
+    @objc func nextTrack() { player.send("next track") }
+    @objc func playPause() { player.send("playpause") }
+    @objc func pickOutput(_ i: NSMenuItem) { AudioOutputs.setDefault(AudioDeviceID(i.tag)); OutputModel.shared.refresh() }
+    @objc func toggleLyrics() { Settings.shared.lyrics.toggle() }
+    @objc func openPlayer(_ i: NSMenuItem) {
+        guard let id = i.representedObject as? String, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: .init())
+    }
+    @objc func toggleLogin() {
+        let s = SMAppService.mainApp
+        do { if s.status == .enabled { try s.unregister() } else { try s.register() } } catch { dlog("launch at login: \(error)") }
+    }
+
     @objc func toggleEnabled() {
         enabled.toggle()
         UserDefaults.standard.set(enabled, forKey: "enabled")
@@ -1401,7 +1458,6 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
     }
 
     func refreshToggle() {
-        toggleItem.title = "Lock Widget: \(enabled ? "On" : "Off")   (^⌥L)"
         item.button?.appearsDisabled = !enabled
     }
 

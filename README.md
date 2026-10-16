@@ -16,6 +16,7 @@ Cadence shows what's playing in Apple Music or Spotify on your lock screen, unde
 - **Animated album covers** (Apple Music's motion artwork) as a full-screen background, for albums that have one
 - Audio output picker (speakers, Bluetooth headphones, displays, …)
 - Global shortcut **Control + Option + L** to turn the lock widget on or off
+- Menu bar menu: now playing, previous / play / next, audio output, lyrics and widget toggles, launch at login
 
 ## Requirements
 
