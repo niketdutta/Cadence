@@ -1163,6 +1163,57 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
                         GetApplicationEventTarget(), 0, &ref)
 }
 
+/// Header of the menu bar menu: cover, title / artist / album and the transport buttons.
+struct MenuHeader: View {
+    @ObservedObject var player: Player
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                Group {
+                    if let a = player.art { Image(nsImage: a).resizable().aspectRatio(contentMode: .fill) }
+                    else { Rectangle().fill(.quaternary).overlay(Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary)) }
+                }
+                .frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player.track?.title ?? "Nothing playing").font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    if let t = player.track {
+                        Text(t.artist).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                        if !t.album.isEmpty { Text(t.album).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1) }
+                    } else {
+                        Text("Play something in Music or Spotify").font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 22) {
+                MenuButton(icon: "backward.fill", size: 15) { player.send("previous track") }
+                MenuButton(icon: player.track?.playing == true ? "pause.fill" : "play.fill", size: 22) { player.send("playpause") }
+                MenuButton(icon: "forward.fill", size: 15) { player.send("next track") }
+            }
+            .disabled(player.track == nil)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(width: 280)
+    }
+}
+
+struct MenuButton: View {
+    let icon: String, size: CGFloat, action: () -> Void
+    var body: some View {
+        Button(action: action) { Image(systemName: icon).font(.system(size: size)).frame(width: 40, height: 32) }
+            .buttonStyle(MenuPress())
+    }
+}
+
+struct MenuPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Circle().fill(.primary.opacity(configuration.isPressed ? 0.15 : 0)).frame(width: 36, height: 36))
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+    }
+}
+
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let player = Player()
     var item: NSStatusItem!
@@ -1396,23 +1447,21 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
 
     func rebuild(_ menu: NSMenu) {
         menu.removeAllItems()
-        func add(_ title: String, _ sel: Selector?, key: String = "", on: Bool = false, enabled: Bool = true) -> NSMenuItem {
-            let i = menu.addItem(withTitle: title, action: enabled ? sel : nil, keyEquivalent: key)
+        @discardableResult
+        func add(_ title: String, _ icon: String?, _ sel: Selector, key: String = "", mods: NSEvent.ModifierFlags = [.command], on: Bool = false) -> NSMenuItem {
+            let i = menu.addItem(withTitle: title, action: sel, keyEquivalent: key)
             i.target = self; i.state = on ? .on : .off
+            i.keyEquivalentModifierMask = mods
+            if let icon { i.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil) }
             return i
         }
-        // Now playing (the lock widget only polls while visible, so read once here)
-        if player.pollTimer == nil { player.track = Player.read() }
-        if let t = player.track {
-            _ = add(t.title, nil, enabled: false).attributedTitle = NSAttributedString(string: t.title, attributes: [.font: NSFont.boldSystemFont(ofSize: 13)])
-            _ = add("\(t.artist)\(t.album.isEmpty ? "" : " — \(t.album)")", nil, enabled: false)
-            menu.addItem(.separator())
-            _ = add("Previous", #selector(prevTrack))
-            _ = add(t.playing ? "Pause" : "Play", #selector(playPause))
-            _ = add("Next", #selector(nextTrack))
-        } else {
-            _ = add("Nothing playing", nil, enabled: false)
-        }
+        // The lock widget only polls while visible, so refresh once when the menu opens (the header view updates itself).
+        if player.pollTimer == nil { player.poll() }
+        let header = NSMenuItem()
+        let host = NSHostingView(rootView: MenuHeader(player: player))
+        host.frame = NSRect(x: 0, y: 0, width: 280, height: 150)
+        header.view = host
+        menu.addItem(header)
         menu.addItem(.separator())
 
         let out = OutputModel.shared; out.refresh()
@@ -1422,17 +1471,18 @@ func installHotKey(keyCode: Int, modifiers: Int, _ action: @escaping () -> Void)
             i.target = self; i.tag = Int(d.id); i.state = d.isDefault ? .on : .off
             i.image = NSImage(systemSymbolName: d.symbol, accessibilityDescription: nil)
         }
-        menu.addItem(withTitle: "Audio Output", action: nil, keyEquivalent: "").submenu = sub
+        let o = menu.addItem(withTitle: "Audio Output", action: nil, keyEquivalent: "")
+        o.submenu = sub; o.image = NSImage(systemSymbolName: out.currentSymbol, accessibilityDescription: nil)
         menu.addItem(.separator())
 
-        toggleItem = add("Lock Widget: \(enabled ? "On" : "Off")   (^⌥L)", #selector(toggleEnabled), on: enabled)
-        _ = add("Live Lyrics", #selector(toggleLyrics), on: Settings.shared.lyrics)
-        _ = add("Preview Lock Widget (8s)", #selector(preview), key: "l")
+        toggleItem = add("Lock Screen Widget", "lock.display", #selector(toggleEnabled), key: "l", mods: [.control, .option], on: enabled)
+        add("Live Lyrics", "quote.bubble", #selector(toggleLyrics), on: Settings.shared.lyrics)
+        add("Preview on Screen (8s)", "eye", #selector(preview), key: "p")
         menu.addItem(.separator())
-        _ = add("Open Music", #selector(openPlayer(_:))).representedObject = "com.apple.Music"
-        _ = add("Open Spotify", #selector(openPlayer(_:))).representedObject = "com.spotify.client"
+        add("Open Music", "music.note.house", #selector(openPlayer(_:))).representedObject = "com.apple.Music"
+        add("Open Spotify", "dot.radiowaves.left.and.right", #selector(openPlayer(_:))).representedObject = "com.spotify.client"
         menu.addItem(.separator())
-        _ = add("Launch at Login", #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled)
+        add("Launch at Login", "power", #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled)
         menu.addItem(withTitle: "Quit Cadence", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
