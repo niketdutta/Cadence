@@ -51,9 +51,6 @@ debug.log
 *.swo
 *~
 
-# --- Local AI-assistant files and scratch ---
-.claude/
-.cursor/
-graphify-out/
+# --- Scratch ---
 scratch/
 tmp/
