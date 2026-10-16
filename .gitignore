@@ -1,7 +1,59 @@
+# --- Build output ---
 .build/
 .swiftpm/
+DerivedData/
+*.o
+*.swiftmodule
+*.dSYM/
+
+# --- Packaged app and installers (publish these as GitHub Release assets, not in git) ---
 LockMusic.app/
-LockMusic.dmg
 dmg-staging/
+*.dmg
+*.pkg
+*.zip
+*.xcarchive
+
+# --- Xcode (if you open the package in Xcode) ---
+xcuserdata/
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# --- Signing and notarization secrets: never commit these ---
+*.p12
+*.cer
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+*.p8
+.env
+.env.*
+notarytool*.json
+
+# --- Logs and crash reports ---
+*.log
+*.ips
+*.crash
 debug.log
+
+# --- Editors and OS junk ---
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Trash-*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Local AI-assistant files and scratch ---
+.claude/
+.cursor/
+graphify-out/
+scratch/
+tmp/
