@@ -6,7 +6,13 @@
 <key>CFBundleName</key><string>Cadence</string>
 <key>CFBundleExecutable</key><string>Cadence</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>0.1.1</string>
+<key>LSMinimumSystemVersion</key><string>26.0</string>
+<key>SUFeedURL</key><string>https://github.com/niketdutta/Cadence/releases/latest/download/appcast.xml</string>
+<key>SUPublicEDKey</key><string>7l4YYvpYX/ApcWZIiSHZU339Vqsn82NBtAh45NjJRFo=</string>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>SUAutomaticallyUpdate</key><false/>
 <key>LSUIElement</key><true/>
 <key>NSAppleEventsUsageDescription</key><string>Cadence reads and controls the current track in Music and Spotify.</string>
 </dict></plist>

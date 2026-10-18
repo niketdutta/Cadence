@@ -7,6 +7,7 @@ import CoreAudio
 import Combine
 import Carbon.HIToolbox
 import ServiceManagement
+import Sparkle
 
 struct LyricLine { var t: Double; var text: String }
 
@@ -15,6 +16,8 @@ struct Track: Equatable {
     var album = ""
     var playing: Bool
     var position: Double, duration: Double
+    var id = ""
+    var favorite: Bool? = nil
 }
 
 @MainActor final class Player: ObservableObject {
@@ -34,7 +37,8 @@ struct Track: Equatable {
     @Published var revealed = false  // drives the cover/backdrop animation
     @Published var lyricsOpen = UserDefaults.standard.bool(forKey: "lyricsOpen") { didSet { UserDefaults.standard.set(lyricsOpen, forKey: "lyricsOpen") } }  // lyrics panel opened from the player button
     @Published var expanded = false  // big album art shown
-    @Published var liked = false  // visual only, not synced to the music app
+    var liked: Bool { track?.favorite == true }
+    @Published var favoriteUpdating = false
     private var artKey = ""
     private let queue = DispatchQueue(label: "applescript")
 
@@ -145,6 +149,26 @@ struct Track: Equatable {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.poll() }
     }
 
+    func toggleFavorite() {
+        guard let t = track, t.app == "Music", !t.id.isEmpty,
+              let favorite = t.favorite, !favoriteUpdating else { return }
+        favoriteUpdating = true
+        queue.async {
+            // Check identity again: playback may have advanced while the command was queued.
+            _ = Player.run("""
+                tell application "Music"
+                  if persistent ID of current track is "\(t.id)" then
+                    set favorited of current track to \(favorite ? "false" : "true")
+                  end if
+                end tell
+                """)
+            DispatchQueue.main.async {
+                self.favoriteUpdating = false
+                self.poll()
+            }
+        }
+    }
+
     // MARK: AppleScript (off main thread)
     /// Compiled scripts for the repeated read queries (compiling every second was a large share of the CPU). The AppleScript
     /// queue is serial, so this dictionary is only ever touched from one thread.
@@ -167,12 +191,22 @@ struct Track: Equatable {
             tell application "Music"
               if player state is stopped then return {}
               set t to current track
-              return {player state as text, name of t, artist of t, player position, duration of t, album of t}
+              set favoriteState to -1
+              try
+                if favorited of t then
+                  set favoriteState to 1
+                else
+                  set favoriteState to 0
+                end if
+              end try
+              return {player state as text, name of t, artist of t, player position, duration of t, album of t, persistent ID of t, favoriteState}
             end tell
             """, cached: true), d.numberOfItems >= 5 {
             found = Track(app: "Music", title: d.atIndex(2)?.stringValue ?? "", artist: d.atIndex(3)?.stringValue ?? "", album: d.atIndex(6)?.stringValue ?? "",
                           playing: d.atIndex(1)?.stringValue == "playing",
-                          position: d.atIndex(4)?.doubleValue ?? 0, duration: d.atIndex(5)?.doubleValue ?? 0)
+                          position: d.atIndex(4)?.doubleValue ?? 0, duration: d.atIndex(5)?.doubleValue ?? 0,
+                          id: d.atIndex(7)?.stringValue ?? "",
+                          favorite: d.atIndex(8).flatMap { $0.int32Value >= 0 ? $0.int32Value == 1 : nil })
         }
         if found?.playing != true, running("com.spotify.client"), let d = run("""
             tell application "Spotify"
@@ -470,7 +504,12 @@ struct WidgetView: View {
             }
             .font(.system(size: 9)).foregroundStyle(.white.opacity(0.7))
             HStack {
-                btn(player.liked ? "heart.fill" : "heart", 17) { player.liked.toggle() }
+                if t?.app == "Music" {
+                    btn(player.liked ? "heart.fill" : "heart", 17) { player.toggleFavorite() }
+                        .disabled(t?.favorite == nil || player.favoriteUpdating)
+                        .opacity(t?.favorite == nil ? 0.35 : 1)
+                        .help(t?.favorite == nil ? "Apple Music could not read this track’s favorite status" : "Toggle favorite in Apple Music")
+                }
                 Spacer()
                 btn("backward.fill", 19) { player.send("previous track") }
                 Spacer()
@@ -668,7 +707,7 @@ struct LyricsLineView: View {
 struct LyricsFullView: View {
     @ObservedObject var player: Player
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.2)) { ctx in
+        TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
             let pos = player.livePosition(ctx.date) + Settings.shared.lyricOffset
             let idx = player.lyrics.lastIndex(where: { $0.t <= pos }) ?? 0
             // how far through an instrumental gap we are (drives the 3 intro dots), quantised so rows only redraw in steps
@@ -691,6 +730,7 @@ struct IntroDots: View {
                 Circle().fill(.white.opacity(progress * 3 > Double(i) ? 0.95 : 0.35)).frame(width: 9, height: 9)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: progress)
         .padding(.vertical, 14)
     }
 }
@@ -699,6 +739,8 @@ struct LyricsList: View {
     var lines: [LyricLine]
     var current: Int
     var dotProgress: Double
+    // Keep scrolling and line emphasis on the same curve so they land together.
+    private let transition = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.65)
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
@@ -717,15 +759,14 @@ struct LyricsList: View {
                         }
                         .scaleEffect(d == 0 ? 1 : 0.93, anchor: .leading)  // current line grows into place
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        // each line reacts a beat after its neighbour, so the change ripples outward like Apple Music
-                        .animation(.spring(response: 0.55, dampingFraction: 0.82).delay(Double(min(d, 8)) * 0.03), value: current)
+                        .animation(transition, value: current)
                         .id(i)
                     }
                 }
                 .padding(.vertical, 300)
             }
             .scrollDisabled(true)
-            .onChange(of: current) { _, new in withAnimation(.spring(response: 0.65, dampingFraction: 0.9)) { proxy.scrollTo(new, anchor: UnitPoint(x: 0.5, y: 0.4)) } }
+            .onChange(of: current) { _, new in withAnimation(transition) { proxy.scrollTo(new, anchor: UnitPoint(x: 0.5, y: 0.4)) } }
             .onAppear { proxy.scrollTo(current, anchor: UnitPoint(x: 0.5, y: 0.4)) }
         }
         .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.1), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
@@ -867,6 +908,11 @@ struct SettingsView: View {
             if settings.open {
                 Toggle("Live lyrics", isOn: $settings.lyrics).toggleStyle(.switch).font(.system(size: 12))
                 row("Lyrics timing  \(String(format: "%+.2f", settings.lyricOffset))s") { Slider(value: $settings.lyricOffset, in: -1...3) }
+                Link(destination: URL(string: "https://discord.gg/C8aghAUGPQ")!) {
+                    Label("Discord Server", systemImage: "bubble.left.and.bubble.right")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.plain)
             }
         }
         .foregroundStyle(.white)
@@ -1045,7 +1091,8 @@ struct StatusRow: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { _ in
             if let b = battery() {
-                Label("\(b.0)%", systemImage: b.1 ? "bolt.fill" : "battery.50percent")
+                let level = Int((Double(min(max(b.0, 0), 100)) / 25).rounded()) * 25
+                Label("\(b.0)%", systemImage: b.1 ? "bolt.fill" : "battery.\(level)percent")
                     .font(.system(size: 18, weight: .medium)).foregroundStyle(.white.opacity(0.8))
             }
         }
@@ -1214,7 +1261,23 @@ struct MenuPress: ButtonStyle {
     }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUStandardUserDriverDelegate {
+    lazy var updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: self)
+    var updateWaitingForUnlock = false
+    nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
+        MainActor.assumeIsolated { !locked() }
+    }
+
+    nonisolated func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
+        MainActor.assumeIsolated { updateWaitingForUnlock = !handleShowingUpdate }
+    }
+
+    nonisolated func standardUserDriverWillFinishUpdateSession() {
+        MainActor.assumeIsolated { updateWaitingForUnlock = false }
+    }
+
     let player = Player()
     var item: NSStatusItem!
     var panel: Panel?
@@ -1247,6 +1310,7 @@ struct MenuPress: ButtonStyle {
     var lockedSince: Date?
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        updaterController.startUpdater()
         // Layout reacts the instant a toggle changes (the SwiftUI cover already does), not on the next 0.15s tick.
         Publishers.Merge3(player.$lyricsOpen.removeDuplicates().map { _ in () }, player.$expanded.removeDuplicates().map { _ in () },
                           player.$lyrics.map { $0.count }.removeDuplicates().map { _ in () })
@@ -1316,6 +1380,10 @@ struct MenuPress: ButtonStyle {
             if stateNow != lastState { lastState = stateNow; dlog("state: " + stateNow) }
         }
         let isLocked = notified || lockedNow()
+        if !isLocked, updateWaitingForUnlock {
+            updateWaitingForUnlock = false
+            updaterController.checkForUpdates(nil)
+        }
         let want = (enabled && isLocked) || previewing
         if want != lastWant { lastWant = want; dlog("want=\(want) locked=\(isLocked)") }
         player.setPolling(want)  // Music / Spotify are only queried while the widget is on screen
@@ -1483,10 +1551,19 @@ struct MenuPress: ButtonStyle {
         add("Open Spotify", "dot.radiowaves.left.and.right", #selector(openPlayer(_:))).representedObject = "com.spotify.client"
         menu.addItem(.separator())
         add("Launch at Login", "power", #selector(toggleLogin), on: SMAppService.mainApp.status == .enabled)
+        menu.addItem(.separator())
+        let updateItem = menu.addItem(withTitle: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        updateItem.target = updaterController
+        add("Automatically Check for Updates", "arrow.triangle.2.circlepath", #selector(toggleAutomaticUpdates), on: updaterController.updater.automaticallyChecksForUpdates)
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Cadence", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     }
 
     @objc func prevTrack() { player.send("previous track") }
+    @objc func toggleAutomaticUpdates() {
+        let updater = updaterController.updater
+        updater.automaticallyChecksForUpdates.toggle()
+    }
     @objc func nextTrack() { player.send("next track") }
     @objc func playPause() { player.send("playpause") }
     @objc func pickOutput(_ i: NSMenuItem) { AudioOutputs.setDefault(AudioDeviceID(i.tag)); OutputModel.shared.refresh() }

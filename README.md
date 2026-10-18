@@ -40,6 +40,7 @@ Cadence shows what's playing in Apple Music or Spotify on your lock screen, unde
 - Audio output picker (speakers, Bluetooth headphones, displays, …)
 - Global shortcut **Control + Option + L** to turn the lock widget on or off
 - Menu bar menu: now playing, previous / play / next, audio output, lyrics and widget toggles, launch at login
+- Automatic update checks and a **Check for Updates…** menu item (Sparkle)
 
 ## Requirements
 
@@ -113,6 +114,8 @@ You only need to do this the first time. If you'd rather not trust a downloaded 
 - Only Music and Spotify are supported (no browser or other players).
 
 ## Debugging
+
+For preparing signed update releases, see [App updates](docs/UPDATES.md).
 
 Start the app with `CADENCE_DEBUG=1` to write a log to `~/Library/Logs/Cadence.log` and enable the test hooks (creating `/tmp/cadence-preview`, `/tmp/cadence-expand`, `/tmp/cadence-full` triggers a preview / expand / full-screen toggle):
 
